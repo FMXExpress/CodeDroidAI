@@ -29,6 +29,8 @@ Other Delphi AI clients:
 
 [Stable Diffusion Desktop Client](https://github.com/FMXExpress/Stable-Diffusion-Desktop-Client)
 
+[ControlNet Sketch To Image](https://github.com/FMXExpress/ControlNet-Sketch-To-Image)
+
 [AutoBlogAI](https://github.com/FMXExpress/AutoBlogAI)
 
 [AI Code Translator](https://github.com/FMXExpress/AI-Code-Translator)
