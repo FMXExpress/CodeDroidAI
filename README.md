@@ -29,6 +29,10 @@ Other Delphi AI clients:
 
 [Stable Diffusion Desktop Client](https://github.com/FMXExpress/Stable-Diffusion-Desktop-Client)
 
+[AutoBlogAI](https://github.com/FMXExpress/AutoBlogAI)
+
+[AI Code Translator](https://github.com/FMXExpress/AI-Code-Translator)
+
 [AI Playground](https://github.com/FMXExpress/AI-Playground-DesktopClient)
 
 [Song Writer AI](https://github.com/FMXExpress/Song-Writer-AI)
