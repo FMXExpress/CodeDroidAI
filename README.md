@@ -4,6 +4,9 @@ Generate code and forms with AI for Delphi Object Pascal using LLMs like ChatGPT
 The CodeDroidAI Desktop client is a powerful UI for generate code and forms for Delphi and C++Builder. Comes with the ability to verify Delphi and C++ code by compiling it and then reporting errors back to ChatGPT. Also supports other LLMs like Vicuna-13b. 
 Includes a built in template system to add additional code generation options.
 
+
+[![CodeDroidAI Coding Bootcamp Session](https://img.youtube.com/vi/Li3CP9PtI1I/maxresdefault.jpg)](https://www.youtube.com/watch?v=Li3CP9PtI1I)
+
 Built in functionality includes:
 * Generate Procedures
 * Code Analysis
