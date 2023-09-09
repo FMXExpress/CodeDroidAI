@@ -161,6 +161,10 @@ type
     ClearErrorButton: TButton;
     Layout14: TLayout;
     Layout15: TLayout;
+    Layout16: TLayout;
+    FilePathEdit: TEdit;
+    OpenButton: TButton;
+    OpenDialog: TOpenDialog;
     procedure APIKeyButtonClick(Sender: TObject);
     procedure GenerateButtonClick(Sender: TObject);
     procedure BuildButtonClick(Sender: TObject);
@@ -181,6 +185,7 @@ type
     procedure CopyOutputButtonClick(Sender: TObject);
     procedure CopyErrorButtonClick(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
+    procedure OpenButtonClick(Sender: TObject);
   private
     { Private declarations }
     FCard: Integer;
@@ -470,6 +475,14 @@ begin
     if HintLabel.Visible=True then HintLabel.Visible := False;
 end;
 
+procedure TMainForm.OpenButtonClick(Sender: TObject);
+begin
+  if OpenDialog.Execute then
+  begin
+    FilePathEdit.Text := OpenDialog.FileName;
+  end;
+end;
+
 procedure TMainForm.OutputCBChange(Sender: TObject);
 begin
   OutputMemoChange(Sender);
@@ -756,12 +769,23 @@ begin
   Timer.Enabled := True;
 
   TTask.Run(procedure begin
+    var InputText := InputMemo.Lines.Text;
+
+    if (FilePathEdit.Text<>'') then
+    begin
+      var SL := TStringList.Create;
+      SL.LoadFromFile(FilePathEdit.Text);
+      InputText := InputText + ' And this file "' + ExtractFilePath(FilePathEdit.Text) + '" containing: ' + SL.Text;
+      SL.Free;
+    end;
+
     if ModelsMT.FieldByName('provider').AsWideString='openai' then
     begin
+
       RESTRequest1.Params[0].Value := 'Bearer ' + OAAPIKeyEdit.Text;
       RESTRequest1.Params[1].Value := CreateOpenAIChatJSON(ModelsMT.FieldByName('model').AsWideString, PromptMemo.Lines.Text.Replace('%inputlang%',InputCB.Selected.Text)
       .Replace('%outputlang%',OutputCB.Selected.Text)
-      .Replace('%prompt%',InputMemo.Lines.Text), 2000);
+      .Replace('%prompt%',InputText), 2000);
       RESTRequest1.Execute;
 
       if FDMemTable1.FindField('choices')<>nil then
@@ -790,7 +814,7 @@ begin
       RESTRequest2.Params[0].Value := 'Token ' + APIKeyEdit.Text;
       RESTRequest2.Params[1].Value := CreateReplicateJSON(ModelsMT.FieldByName('model').AsWideString, PromptMemo.Lines.Text.Replace('%inputlang%',InputCB.Selected.Text)
       .Replace('%outputlang%',OutputCB.Selected.Text)
-      .Replace('%prompt%',InputMemo.Lines.Text));
+      .Replace('%prompt%',InputText));
       RESTRequest2.Execute;
 
       if FDMemTable2.FindField('id')<>nil then
