@@ -17,6 +17,7 @@ Built in functionality includes:
 * Convert Delphi Code To Inline ASM
 * Optimize Code
 * Translate Between Languages
+* Create A Unit Test
 
 Supported models include:
 * gpt-3.5-turbo-16k
