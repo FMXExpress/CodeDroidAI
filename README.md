@@ -28,6 +28,10 @@ Supported models include:
 * llama13b-v2-chat
 * freewilly2
 * fastervicuna_13b
+* codellama-13b
+* codellama-34b
+* wizardcoder-34b
+* codellama-7b
 * and more!
 
 Built with [Delphi](https://www.embarcadero.com/products/delphi/) using the FireMonkey framework this client works on Windows, macOS, and Linux (and maybe Android+iOS) with a single codebase and single UI. At the moment it is specifically set up for Windows.
