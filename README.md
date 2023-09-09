@@ -18,6 +18,18 @@ Built in functionality includes:
 * Optimize Code
 * Translate Between Languages
 
+Supported models include:
+* gpt-3.5-turbo-16k
+* gpt-4
+* vicuna-13b
+* gpt4all
+* falcon-40b-instruct
+* llama70b-v2-chat
+* llama13b-v2-chat
+* freewilly2
+* fastervicuna_13b
+* and more!
+
 Built with [Delphi](https://www.embarcadero.com/products/delphi/) using the FireMonkey framework this client works on Windows, macOS, and Linux (and maybe Android+iOS) with a single codebase and single UI. At the moment it is specifically set up for Windows.
 
 It features a REST integration with OpenAI.com (ChatGPT) and Replicate.com for providing source code generation functionality within the client. You need to sign up for API keys to access that functionality. Replicate models can be run in the cloud or locally via docker.
