@@ -82,6 +82,7 @@ object MainForm: TMainForm
       object VersionEdit: TComboBox
         Align = Left
         Items.Strings = (
+          'gpt-5.2'
           'gpt-3.5-turbo-16k'
           'gpt-4'
           'gpt-4-0314'
