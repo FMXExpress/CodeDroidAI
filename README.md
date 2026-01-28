@@ -23,6 +23,7 @@ Built in functionality includes:
 * Create A Unit Test
 
 Supported models include:
+* gpt-5.2
 * gpt-3.5-turbo-16k
 * gpt-4
 * vicuna-13b
