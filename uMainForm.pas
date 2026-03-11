@@ -21,6 +21,7 @@ uses
   Data.Bind.Controls, Fmx.Bind.Navigator, Data.Bind.Grid, FMX.Grid, FMX.Objects,
   uItemFrame, FMX.BufferedLayout
   {$ENDIF}
+  , uMemory, uAgentLoop
   ;
 
 type
@@ -165,6 +166,25 @@ type
     FilePathEdit: TEdit;
     OpenButton: TButton;
     OpenDialog: TOpenDialog;
+    // Agent Mode controls (on DroidTabItem)
+    AgentModeSwitch: TSwitch;
+    AgentModeLabel: TLabel;
+    MaxIterationsEdit: TEdit;
+    MaxIterationsLabel: TLabel;
+    AgentControlLayout: TLayout;
+    // Agent Log tab
+    TabItem7: TTabItem;
+    AgentLogMemo: TMemo;
+    Layout17: TLayout;
+    ClearAgentLogButton: TButton;
+    // Memory tab
+    TabItem8: TTabItem;
+    MemoryGrid: TStringGrid;
+    MemoryMT: TFDMemTable;
+    BindSourceDB10: TBindSourceDB;
+    LinkGridToDataSourceBindSourceDB10: TLinkGridToDataSource;
+    BindNavigator3: TBindNavigator;
+    Layout18: TLayout;
     procedure APIKeyButtonClick(Sender: TObject);
     procedure GenerateButtonClick(Sender: TObject);
     procedure BuildButtonClick(Sender: TObject);
@@ -186,14 +206,33 @@ type
     procedure CopyErrorButtonClick(Sender: TObject);
     procedure FormClose(Sender: TObject; var Action: TCloseAction);
     procedure OpenButtonClick(Sender: TObject);
+    procedure ClearAgentLogButtonClick(Sender: TObject);
+    procedure AgentModeSwitchSwitch(Sender: TObject);
   private
     { Private declarations }
     FCard: Integer;
     FCancel: Boolean;
+    FMemory: TMemoryManager;
+    FAgentLoop: TAgentLoop;
     function ProcessTask(const AId: Integer): ITask;
     procedure BuildProject(const AId: Integer; const APath: String);
     procedure BuildEnd;
     function CreateOpenAIChatJSON(const AModel, APrompt: string; AMaxTokens: Integer): string;
+    // Agent loop callbacks
+    procedure HandleAgentToolCall(const AToolName, AInput, AOutput: string);
+    procedure HandleAgentMessage(const ARole, AContent: string);
+    procedure HandleAgentComplete(const AFinalOutput: string);
+    procedure HandleAgentError(const AError: string);
+    // Agent tool implementations
+    function AgentCompileCode(const ACode: string): string;
+    function AgentGetErrorLog: string;
+    procedure AgentSetOutput(const ACode: string);
+    function AgentGetOutput: string;
+    // Memory helpers
+    procedure LoadMemory;
+    procedure SaveMemory;
+    procedure RefreshMemoryGrid;
+    procedure AutoLearnFromGeneration;
   public
     { Public declarations }
     function CreateReplicateJSON(const AVersion, APrompt: string): string;
@@ -211,6 +250,7 @@ type
     STS_FAIL = 'Failed';
     HISTORY_FILE = 'cdai_history.fds';
     TEMPLATES_FILE = 'cdai_templates.fds';
+    MEMORY_JSON_FILE = 'cdai_memory.json';
 
 var
   MainForm: TMainForm;
@@ -436,6 +476,16 @@ end;
 procedure TMainForm.FormClose(Sender: TObject; var Action: TCloseAction);
 begin
   HistoryMT.SaveToFile(TPath.Combine(TPath.GetDocumentsPath,HISTORY_FILE));
+  SaveMemory;
+
+  // Cancel any running agent loop
+  if Assigned(FAgentLoop) then
+  begin
+    FAgentLoop.Cancel;
+    FAgentLoop.Free;
+    FAgentLoop := nil;
+  end;
+  FMemory.Free;
 end;
 
 procedure TMainForm.FormCreate(Sender: TObject);
@@ -450,6 +500,20 @@ begin
 
   if TFile.Exists(TPath.Combine(TPath.GetDocumentsPath,HISTORY_FILE)) then
     HistoryMT.LoadFromFile(TPath.Combine(TPath.GetDocumentsPath,HISTORY_FILE));
+
+  // Initialize memory manager and load persistent memory
+  FMemory := TMemoryManager.Create;
+  LoadMemory;
+
+  // Initialize agent loop defaults (wired up in GenerateButtonClick when used)
+  FAgentLoop := nil;
+
+  // Set default max iterations
+  MaxIterationsEdit.Text := '10';
+
+  // Hide agent-specific controls by default (agent mode is off)
+  MaxIterationsLabel.Visible := False;
+  MaxIterationsEdit.Visible := False;
 end;
 
 procedure TMainForm.HistoryGridSelChanged(Sender: TObject);
@@ -763,6 +827,57 @@ begin
       Exit;
     end;
 
+  // Agent mode: use TAgentLoop instead of single-shot
+  if AgentModeSwitch.IsChecked and (ModelsMT.FieldByName('provider').AsWideString='openai') then
+  begin
+    GenerateButton.Enabled := False;
+    ProgressBar.Visible := True;
+    Timer.Enabled := True;
+    StatusLabel.Text := 'Agent running...';
+
+    if Assigned(FAgentLoop) then
+    begin
+      FAgentLoop.Cancel;
+      FAgentLoop.Free;
+    end;
+    FAgentLoop := TAgentLoop.Create;
+    FAgentLoop.Memory := FMemory;
+    FAgentLoop.APIKey := OAAPIKeyEdit.Text;
+    FAgentLoop.Model := ModelsMT.FieldByName('model').AsWideString;
+    FAgentLoop.MaxIterations := StrToIntDef(MaxIterationsEdit.Text, AGENT_MAX_ITERATIONS);
+    FAgentLoop.OnToolCall := HandleAgentToolCall;
+    FAgentLoop.OnMessage  := HandleAgentMessage;
+    FAgentLoop.OnComplete := HandleAgentComplete;
+    FAgentLoop.OnError    := HandleAgentError;
+    FAgentLoop.CompileCode := AgentCompileCode;
+    FAgentLoop.GetErrorLog := AgentGetErrorLog;
+    FAgentLoop.SetOutput   := AgentSetOutput;
+    FAgentLoop.GetOutput   := AgentGetOutput;
+
+    AgentLogMemo.Lines.Clear;
+    AgentLogMemo.Lines.Append('[Agent] Starting agent loop...');
+    TabControl.ActiveTab := TabItem7;  // Switch to Agent Log tab
+
+    var LFullPrompt := PromptMemo.Lines.Text
+      .Replace('%inputlang%', InputCB.Selected.Text)
+      .Replace('%outputlang%', OutputCB.Selected.Text)
+      .Replace('%prompt%', InputMemo.Lines.Text);
+
+    if (FilePathEdit.Text<>'') and TFile.Exists(FilePathEdit.Text) then
+    begin
+      var SL := TStringList.Create;
+      try
+        SL.LoadFromFile(FilePathEdit.Text);
+        LFullPrompt := LFullPrompt + ' And this file "' + FilePathEdit.Text + '" containing: ' + SL.Text;
+      finally
+        SL.Free;
+      end;
+    end;
+
+    FAgentLoop.Run(LFullPrompt);
+    Exit;
+  end;
+
 
   GenerateButton.Enabled := False;
   ProgressBar.Visible := True;
@@ -875,6 +990,170 @@ begin
   end);
 end;
 
+
+// ---------------------------------------------------------------------------
+// Memory helpers
+// ---------------------------------------------------------------------------
+procedure TMainForm.LoadMemory;
+begin
+  FMemory.Load(TPath.Combine(TPath.GetDocumentsPath, MEMORY_JSON_FILE));
+  RefreshMemoryGrid;
+end;
+
+procedure TMainForm.SaveMemory;
+begin
+  if Assigned(FMemory) then
+    FMemory.Save(TPath.Combine(TPath.GetDocumentsPath, MEMORY_JSON_FILE));
+end;
+
+procedure TMainForm.RefreshMemoryGrid;
+var
+  I: Integer;
+  LFact: TMemoryFact;
+begin
+  MemoryMT.EmptyDataSet;
+  MemoryMT.BeginBatch;
+  for I := 0 to FMemory.Count - 1 do
+  begin
+    LFact := FMemory.GetFactByIndex(I);
+    MemoryMT.Append;
+    MemoryMT.FieldByName('Key').AsString := LFact.Key;
+    MemoryMT.FieldByName('Value').AsString := LFact.Value;
+    MemoryMT.FieldByName('Category').AsString := LFact.Category;
+    MemoryMT.Post;
+  end;
+  MemoryMT.EndBatch;
+end;
+
+procedure TMainForm.AutoLearnFromGeneration;
+begin
+  // Auto-record preferred languages from the current combo box selections
+  if InputCB.Selected <> nil then
+    FMemory.SetFact('preferred_input_language', InputCB.Selected.Text, 'style');
+  if OutputCB.Selected <> nil then
+    FMemory.SetFact('preferred_output_language', OutputCB.Selected.Text, 'style');
+  FMemory.SetFact('last_model_used', ModelsMT.FieldByName('model').AsWideString, 'technical');
+  SaveMemory;
+  RefreshMemoryGrid;
+end;
+
+// ---------------------------------------------------------------------------
+// Agent mode toggle
+// ---------------------------------------------------------------------------
+procedure TMainForm.AgentModeSwitchSwitch(Sender: TObject);
+begin
+  MaxIterationsLabel.Visible := AgentModeSwitch.IsChecked;
+  MaxIterationsEdit.Visible  := AgentModeSwitch.IsChecked;
+  if AgentModeSwitch.IsChecked then
+    AgentLogMemo.Lines.Append('[Agent] Agent mode enabled. Generate will use the agent loop.')
+  else
+    AgentLogMemo.Lines.Append('[Agent] Agent mode disabled. Using single-shot generation.');
+end;
+
+procedure TMainForm.ClearAgentLogButtonClick(Sender: TObject);
+begin
+  AgentLogMemo.Lines.Clear;
+end;
+
+// ---------------------------------------------------------------------------
+// Agent loop callbacks
+// ---------------------------------------------------------------------------
+procedure TMainForm.HandleAgentToolCall(const AToolName, AInput, AOutput: string);
+begin
+  AgentLogMemo.Lines.Append(Format('[Tool] %s', [AToolName]));
+  if AInput <> '' then
+    AgentLogMemo.Lines.Append('  Input: ' + Copy(AInput, 1, 120) + IfThen(Length(AInput)>120,'...',''));
+  AgentLogMemo.Lines.Append('  Result: ' + Copy(AOutput, 1, 200) + IfThen(Length(AOutput)>200,'...',''));
+  StatusLabel.Text := '[Tool] ' + AToolName;
+end;
+
+procedure TMainForm.HandleAgentMessage(const ARole, AContent: string);
+begin
+  if SameText(ARole, 'status') then
+  begin
+    StatusLabel.Text := AContent;
+    AgentLogMemo.Lines.Append(AContent);
+  end
+  else
+    AgentLogMemo.Lines.Append(Format('[%s] %s', [UpperCase(ARole), Copy(AContent, 1, 300) + IfThen(Length(AContent)>300,'...','')]));
+end;
+
+procedure TMainForm.HandleAgentComplete(const AFinalOutput: string);
+begin
+  if OutputMemo.Lines.Text = '' then
+    OutputMemo.Lines.Text := AFinalOutput;
+
+  HistoryMT.AppendRecord([Now, PromptMemo.Lines.Text, InputCB.Selected.Text,
+    InputMemo.Lines.Text, OutputCB.Selected.Text, OutputMemo.Lines.Text,
+    ErrorLogMemo.Lines.Text, HintLabel.Text]);
+  HistoryMT.SaveToFile(TPath.Combine(TPath.GetDocumentsPath, HISTORY_FILE));
+
+  AutoLearnFromGeneration;
+
+  StatusLabel.Text := 'Agent complete!';
+  AgentLogMemo.Lines.Append('[Agent] Done. Output updated.');
+  GenerateButton.Enabled := True;
+  ProgressBar.Visible := False;
+end;
+
+procedure TMainForm.HandleAgentError(const AError: string);
+begin
+  AgentLogMemo.Lines.Append('[Error] ' + AError);
+  StatusLabel.Text := 'Agent error';
+  GenerateButton.Enabled := True;
+  ProgressBar.Visible := False;
+end;
+
+// ---------------------------------------------------------------------------
+// Agent tool implementations (called from background thread by TAgentLoop)
+// ---------------------------------------------------------------------------
+function TMainForm.AgentCompileCode(const ACode: string): string;
+var
+  LDprPath: string;
+begin
+  LDprPath := ExtractFilePath(ParamStr(0)) + 'ConsoleProgram.dpr';
+  TFile.WriteAllText(LDprPath, ACode, TEncoding.UTF8);
+
+  // Trigger build synchronously on the main thread
+  TThread.Synchronize(nil, procedure begin
+    ErrorLogMemo.Lines.Clear;
+    OutPutMemo.Lines.Text := ACode;
+    VerifyCodeButtonClick(nil);
+  end);
+
+  // Give the build time to complete (BuildProject runs synchronously inside ExeAndWait)
+  Result := AgentGetErrorLog;
+  if Result = '' then
+    Result := 'Build succeeded.'
+  else
+    Result := 'Build errors:' + #13#10 + Result;
+end;
+
+function TMainForm.AgentGetErrorLog: string;
+var
+  LText: string;
+begin
+  TThread.Synchronize(nil, procedure begin
+    LText := ErrorLogMemo.Lines.Text;
+  end);
+  Result := LText;
+end;
+
+procedure TMainForm.AgentSetOutput(const ACode: string);
+begin
+  // Called already inside TThread.Synchronize from TAgentLoop.DispatchTool
+  OutputMemo.Lines.Text := ACode;
+end;
+
+function TMainForm.AgentGetOutput: string;
+var
+  LText: string;
+begin
+  TThread.Synchronize(nil, procedure begin
+    LText := OutputMemo.Lines.Text;
+  end);
+  Result := LText;
+end;
 
 {$IFDEF MSWINDOWS}
 function TMainForm.ExeAndWait(ExeNameAndParams: string; ncmdShow: Integer = SW_SHOWNORMAL): Integer;
